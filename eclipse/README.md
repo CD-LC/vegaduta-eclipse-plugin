@@ -9,7 +9,7 @@ in a file. You can search your team's knowledge base from the chat, let an
 answer walk you through the code it talks about, and switch on **Private
 Mode** to keep your prompts and code on your machine.
 
-Version **0.5.0** · Eclipse 2024-06 (4.32) or newer · Java 17+ ·
+Version **0.5.1** · Eclipse 2024-06 (4.32) or newer · Java 17+ ·
 Windows, Linux, macOS
 
 > **Preview.** This release is built and its core logic is covered by
@@ -534,8 +534,8 @@ failure, not a code failure.
 
 Output: the p2 site at
 `ai.vegaduta.ide.eclipse.repository/target/repository/` plus a zip of it next
-to it. Versions: bundle `0.5.0.qualifier`, feature `0.5.0.qualifier`, poms
-`0.5.0-SNAPSHOT`; keep all three in step (bump with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=<v>-SNAPSHOT`).
+to it. Versions: bundle `0.5.1.qualifier`, feature `0.5.1.qualifier`, poms
+`0.5.1-SNAPSHOT`; keep all three in step (bump with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=<v>-SNAPSHOT`).
 
 Bundle dependencies (`Require-Bundle`) are all part of the Eclipse Platform
 that every IDE package ships: `org.eclipse.ui`, `swt`, `jface`,
