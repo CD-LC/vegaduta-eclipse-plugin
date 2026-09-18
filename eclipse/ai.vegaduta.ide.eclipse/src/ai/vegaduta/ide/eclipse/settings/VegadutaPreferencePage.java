@@ -4,6 +4,13 @@
 // two credential fields do not go to the preference store at all (they go to
 // ISecurePreferences via TokenStore), and the custom-environment fields need
 // live RULE 0 validation, which a FieldEditor cannot express cleanly.
+//
+// The "Bundled on-device model" group drives runtime/LocalRuntime directly:
+// its buttons act immediately (they are not part of OK/Apply), and its
+// status line follows the runtime through a listener that hops to the UI
+// thread. When the runtime (re)writes the local-server settings, the Base URL
+// and Model fields below are refreshed, so pressing OK afterwards cannot
+// write stale values back over them.
 
 package ai.vegaduta.ide.eclipse.settings;
 
@@ -26,6 +33,10 @@ import org.osgi.service.prefs.BackingStoreException;
 
 import ai.vegaduta.ide.eclipse.VegadutaPlugin;
 import ai.vegaduta.ide.eclipse.auth.TokenStore;
+import ai.vegaduta.ide.eclipse.runtime.LocalRuntime;
+import ai.vegaduta.ide.eclipse.runtime.RuntimeCatalog;
+import ai.vegaduta.ide.eclipse.runtime.RuntimeFiles;
+import ai.vegaduta.ide.eclipse.runtime.RuntimeStatus;
 import ai.vegaduta.ide.eclipse.ui.VegadutaView;
 
 public class VegadutaPreferencePage extends PreferencePage implements IWorkbenchPreferencePage {
@@ -52,6 +63,11 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
     private Button agentAutoApproveEdits;
     private Button agentAutoApproveCommands;
     private Text agentApiKey;
+    private Label runtimeStatus;
+    private Combo runtimeModel;
+    private Button runtimeRun;
+    private Button runtimeStop;
+    private LocalRuntime.Listener runtimeListener;
 
     @Override
     public void init(IWorkbench workbench) {
@@ -65,6 +81,7 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
         root.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         createEnvironmentGroup(root);
+        createBundledRuntimeGroup(root);
         createLocalInferenceGroup(root);
         createAgentGroup(root);
 
@@ -110,6 +127,140 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
                 + " this preference file.");
     }
 
+    // --- bundled on-device model ---------------------------------------------
+
+    private void createBundledRuntimeGroup(Composite parent) {
+        Group group = group(parent, "Bundled on-device model");
+        LocalRuntime runtime = VegadutaPlugin.localRuntime();
+
+        new Label(group, SWT.NONE).setText("Status:");
+        runtimeStatus = new Label(group, SWT.WRAP);
+        runtimeStatus.setLayoutData(fill());
+
+        new Label(group, SWT.NONE).setText("Model:");
+        runtimeModel = new Combo(group, SWT.READ_ONLY);
+        runtimeModel.setLayoutData(fill());
+        String chosen = VegadutaSettings.bundledModel();
+        int select = 0;
+        for (int i = 0; i < RuntimeCatalog.MODELS.size(); i++) {
+            RuntimeCatalog.Model model = RuntimeCatalog.MODELS.get(i);
+            boolean installed = runtime != null && runtime.isModelInstalled(model);
+            runtimeModel.add(model.displayName() + " - " + RuntimeFiles.formatBytes(model.file().sizeBytes())
+                    + (installed ? " (downloaded)" : model.recommended() ? " (recommended)" : ""));
+            if (chosen == null ? model.recommended() : model.id().equals(chosen)) {
+                select = i;
+            }
+        }
+        runtimeModel.select(select);
+
+        new Label(group, SWT.NONE).setText("");
+        Composite buttons = new Composite(group, SWT.NONE);
+        GridLayout row = new GridLayout(2, false);
+        row.marginWidth = 0;
+        row.marginHeight = 0;
+        buttons.setLayout(row);
+        runtimeRun = new Button(buttons, SWT.PUSH);
+        runtimeRun.setText("Download && run");
+        runtimeRun.addListener(SWT.Selection, e -> {
+            LocalRuntime current = VegadutaPlugin.localRuntime();
+            int index = runtimeModel.getSelectionIndex();
+            if (current != null && index >= 0) {
+                current.install(RuntimeCatalog.MODELS.get(index).id());
+            }
+        });
+        runtimeStop = new Button(buttons, SWT.PUSH);
+        runtimeStop.setText("Stop");
+        runtimeStop.addListener(SWT.Selection, e -> {
+            LocalRuntime current = VegadutaPlugin.localRuntime();
+            if (current != null) {
+                current.stop();
+            }
+        });
+
+        hint(group, "Downloads llama.cpp's llama-server (about 12-18 MB) and the chosen model into"
+                + " .vegaduta in your home folder, checks both against pinned SHA-256 checksums, and"
+                + " runs it on this machine only (127.0.0.1). While it runs it is filled in as the"
+                + " local inference server below. The download carries none of your content, so it is"
+                + " allowed in Private Mode. The JetBrains plugin uses the same folders, so a model"
+                + " downloaded there is not downloaded again.");
+
+        if (runtime == null) {
+            showRuntime(null);
+            runtimeRun.setEnabled(false);
+            runtimeStop.setEnabled(false);
+            return;
+        }
+        if (!runtime.isSupported()) {
+            runtimeStatus.setText("Not available on this operating system or processor.");
+            runtimeRun.setEnabled(false);
+            runtimeStop.setEnabled(false);
+            return;
+        }
+        showRuntime(runtime.status());
+        runtimeListener = new LocalRuntime.Listener() {
+            @Override
+            public void statusChanged(RuntimeStatus status) {
+                onUi(() -> showRuntime(status));
+            }
+
+            @Override
+            public void settingsChanged() {
+                onUi(() -> {
+                    if (localServerBaseUrl != null && !localServerBaseUrl.isDisposed()) {
+                        localServerBaseUrl.setText(nullToEmpty(VegadutaSettings.localServerBaseUrl()));
+                        localServerModel.setText(nullToEmpty(VegadutaSettings.localServerModel()));
+                    }
+                });
+            }
+        };
+        runtime.addListener(runtimeListener);
+    }
+
+    private void onUi(Runnable task) {
+        if (runtimeStatus == null || runtimeStatus.isDisposed()) {
+            return;
+        }
+        runtimeStatus.getDisplay().asyncExec(() -> {
+            if (!runtimeStatus.isDisposed()) {
+                task.run();
+            }
+        });
+    }
+
+    /** UI thread only. */
+    private void showRuntime(RuntimeStatus status) {
+        if (runtimeStatus == null || runtimeStatus.isDisposed()) {
+            return;
+        }
+        if (status == null) {
+            runtimeStatus.setText("Unavailable - the VegaDuta plugin is not active.");
+            return;
+        }
+        String text = status.describe();
+        if (status.state() == RuntimeStatus.State.DOWNLOADING && status.progress() != null) {
+            text += " (" + Math.round(status.progress() * 100) + "%)";
+        }
+        runtimeStatus.setText(text);
+        boolean active = status.busy() || status.state() == RuntimeStatus.State.RUNNING;
+        runtimeRun.setEnabled(!status.busy());
+        runtimeStop.setEnabled(active);
+        runtimeStatus.getParent().layout();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    @Override
+    public void dispose() {
+        LocalRuntime runtime = VegadutaPlugin.localRuntime();
+        if (runtime != null && runtimeListener != null) {
+            runtime.removeListener(runtimeListener);
+        }
+        runtimeListener = null;
+        super.dispose();
+    }
+
     // --- local inference -----------------------------------------------------
 
     private void createLocalInferenceGroup(Composite parent) {
@@ -129,7 +280,7 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
                 + " one address in this page that may be a loopback URL: it is your machine, not a"
                 + " VegaDuta service. Blank means local inference is off, and nothing is probed."
                 + " The plugin reports what it finds at this address in the status line under the"
-                + " VegaDuta view.");
+                + " VegaDuta view. The bundled on-device model above fills these in while it runs.");
     }
 
     // --- coding agent --------------------------------------------------------

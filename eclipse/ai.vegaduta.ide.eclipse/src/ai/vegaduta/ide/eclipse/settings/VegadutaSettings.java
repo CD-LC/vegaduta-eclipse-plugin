@@ -29,6 +29,14 @@ public final class VegadutaSettings {
     /** Private Mode (privacy/PrivacyGate). Persisted so it survives a restart:
      * someone who turned it on must not find it silently off tomorrow. */
     public static final String P_PRIVATE_MODE = "privateMode";
+    /** The bundled runtime's chosen model id (runtime/LocalRuntime). */
+    public static final String P_BUNDLED_MODEL = "bundledRuntimeModel";
+    /** Start the bundled model with the plugin. True after "Download & run",
+     * false after an explicit Stop. */
+    public static final String P_BUNDLED_AUTOSTART = "bundledRuntimeAutoStart";
+    /** The Base URL the bundled runtime last wrote into the local-server
+     * settings, so it can tell its own entry from one the person typed. */
+    public static final String P_BUNDLED_BASE_URL = "bundledRuntimeBaseUrl";
 
     /** vegaduta.agent.maxSteps' declared bounds in clients/vscode/package.json,
      * mirrored by the JetBrains plugin. Re-applied on every read rather than
@@ -122,6 +130,78 @@ public final class VegadutaSettings {
             node.flush();
         } catch (org.osgi.service.prefs.BackingStoreException e) {
             ai.vegaduta.ide.eclipse.VegadutaPlugin.logWarning("could not save the Private Mode preference", e);
+        }
+    }
+
+    // --- bundled on-device runtime -------------------------------------------
+
+    public static String bundledModel() {
+        String value = get(P_BUNDLED_MODEL, "").trim();
+        return value.isBlank() ? null : value;
+    }
+
+    public static boolean bundledAutoStart() {
+        return node().getBoolean(P_BUNDLED_AUTOSTART, false);
+    }
+
+    /** Remembers the chosen model and whether to start it with the plugin. */
+    public static void setBundledChoice(String modelId, boolean autoStart) {
+        IEclipsePreferences node = node();
+        if (modelId != null) {
+            node.put(P_BUNDLED_MODEL, modelId);
+        }
+        node.putBoolean(P_BUNDLED_AUTOSTART, autoStart);
+        flush(node, "the on-device model choice");
+    }
+
+    /**
+     * The local-server slice of these settings, as the bundled runtime reads
+     * and writes it (runtime/RuntimeWiring). Every write is flushed.
+     */
+    public static ai.vegaduta.ide.eclipse.runtime.RuntimeWiring.LocalServerSettings localServerSettings() {
+        return new ai.vegaduta.ide.eclipse.runtime.RuntimeWiring.LocalServerSettings() {
+            @Override
+            public String localServerBaseUrl() {
+                return VegadutaSettings.localServerBaseUrl();
+            }
+
+            @Override
+            public String localServerModel() {
+                return VegadutaSettings.localServerModel();
+            }
+
+            @Override
+            public void setLocalServer(String baseUrl, String model) {
+                IEclipsePreferences node = node();
+                node.put(P_LOCAL_SERVER_BASE_URL, baseUrl == null ? "" : baseUrl);
+                node.put(P_LOCAL_SERVER_MODEL, model == null ? "" : model);
+                flush(node, "the local inference server");
+            }
+
+            @Override
+            public String bundledBaseUrl() {
+                String value = get(P_BUNDLED_BASE_URL, "").trim();
+                return value.isBlank() ? null : value;
+            }
+
+            @Override
+            public void setBundledBaseUrl(String baseUrl) {
+                IEclipsePreferences node = node();
+                if (baseUrl == null) {
+                    node.remove(P_BUNDLED_BASE_URL);
+                } else {
+                    node.put(P_BUNDLED_BASE_URL, baseUrl);
+                }
+                flush(node, "the on-device model address");
+            }
+        };
+    }
+
+    private static void flush(IEclipsePreferences node, String what) {
+        try {
+            node.flush();
+        } catch (org.osgi.service.prefs.BackingStoreException e) {
+            ai.vegaduta.ide.eclipse.VegadutaPlugin.logWarning("could not save " + what, e);
         }
     }
 }

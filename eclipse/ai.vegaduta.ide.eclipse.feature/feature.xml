@@ -2,7 +2,7 @@
 <feature
       id="ai.vegaduta.ide.eclipse.feature"
       label="VegaDūta for Eclipse"
-      version="0.4.1.qualifier"
+      version="0.5.0.qualifier"
       provider-name="VegaDuta">
 
    <description url="https://vegaduta.ai">

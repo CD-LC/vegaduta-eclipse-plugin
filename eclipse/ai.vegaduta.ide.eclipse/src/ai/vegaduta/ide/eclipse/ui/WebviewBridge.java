@@ -21,6 +21,11 @@
 // Private Mode: every webview message passes PrivacyGate.check() before the
 // switch, so the hosted paths (chat.send, knowledge.search, sdlc.run,
 // workflow.run) are refused in ONE place while it is on - see PrivacyGate.
+//
+// Bundled on-device runtime: runtime.query / runtime.install / runtime.stop
+// go to runtime/LocalRuntime; every state change comes back as runtime.status
+// through post(), and once the server is running (or gone) init is re-sent so
+// the page sees the new local-server address - see buildInit().
 
 package ai.vegaduta.ide.eclipse.ui;
 
@@ -51,6 +56,10 @@ import ai.vegaduta.ide.eclipse.context.GitDiff;
 import ai.vegaduta.ide.eclipse.context.GitLog;
 import ai.vegaduta.ide.eclipse.json.Json;
 import ai.vegaduta.ide.eclipse.privacy.PrivacyGate;
+import ai.vegaduta.ide.eclipse.runtime.LocalRuntime;
+import ai.vegaduta.ide.eclipse.runtime.RuntimeCatalog;
+import ai.vegaduta.ide.eclipse.runtime.RuntimeStatus;
+import ai.vegaduta.ide.eclipse.runtime.RuntimeWiring;
 import ai.vegaduta.ide.eclipse.settings.VegadutaSettings;
 
 public final class WebviewBridge {
@@ -95,10 +104,33 @@ public final class WebviewBridge {
      * page's toggle or the view's toolbar button). Called on the UI thread. */
     private volatile Consumer<Boolean> privacyListener;
 
+    /** Forwards the bundled runtime's state to the page. Registered for the
+     * bridge's lifetime; the runtime calls it from its job threads, and post()
+     * hops to the UI thread. */
+    private final LocalRuntime.Listener runtimeListener = new LocalRuntime.Listener() {
+        @Override
+        public void statusChanged(RuntimeStatus status) {
+            LocalRuntime runtime = VegadutaPlugin.localRuntime();
+            if (runtime != null) {
+                post(status.toMessage(RuntimeCatalog.MODELS, runtime::isModelInstalled));
+            }
+        }
+
+        @Override
+        public void settingsChanged() {
+            resendInit();
+            reportLocalServer();
+        }
+    };
+
     public WebviewBridge(Browser browser, Consumer<String> statusReporter) {
         this.browser = browser;
         this.display = browser.getDisplay();
         this.statusReporter = statusReporter;
+        LocalRuntime runtime = VegadutaPlugin.localRuntime();
+        if (runtime != null) {
+            runtime.addListener(runtimeListener);
+        }
         this.hostFunction = new BrowserFunction(browser, HOST_FUNCTION) {
             @Override
             public Object function(Object[] arguments) {
@@ -117,6 +149,12 @@ public final class WebviewBridge {
     public void dispose() {
         if (!disposed.compareAndSet(false, true)) {
             return;
+        }
+        LocalRuntime runtime = VegadutaPlugin.localRuntime();
+        if (runtime != null) {
+            // Closing the view does NOT stop the server: it keeps serving
+            // until Stop or Eclipse exits (bundle stop ends it).
+            runtime.removeListener(runtimeListener);
         }
         for (AtomicBoolean flag : activeChats.values()) {
             flag.set(true);
@@ -271,6 +309,24 @@ public final class WebviewBridge {
             case "ui.reveal" -> EditorBridge.reveal(Json.str(message, "path"),
                     Json.num(message, "startLine", 0), Json.num(message, "endLine", 0), this::report);
             case "knowledge.search" -> handleKnowledgeSearch(message);
+            case "runtime.query" -> postRuntimeStatus();
+            case "runtime.install" -> {
+                LocalRuntime runtime = VegadutaPlugin.localRuntime();
+                String modelId = Json.str(message, "modelId");
+                if (runtime == null) {
+                    post(runtimeUnavailable(modelId));
+                } else if (modelId != null) {
+                    // Returns at once; the work runs in an Eclipse Job and
+                    // reports through runtimeListener.
+                    runtime.install(modelId);
+                }
+            }
+            case "runtime.stop" -> {
+                LocalRuntime runtime = VegadutaPlugin.localRuntime();
+                if (runtime != null) {
+                    runtime.stop();
+                }
+            }
             case "privacy.mode" -> {
                 Object requested = message.get("private");
                 if (requested instanceof Boolean on) {
@@ -376,28 +432,90 @@ public final class WebviewBridge {
         message.put("auth", authJson());
         message.put("agents", lists.agentMaps());
         message.put("workflows", lists.workflowMaps());
-        // FALSE, unconditionally, and that is an honest answer rather than
-        // a missing feature:
-        //  - WebGPU/WebLLM is off by construction here. The edge seed pins
+        // hostLocalEngine turns on the page's engine host, which in this host
+        // can only ever mean its LOCAL-HTTP backend (edge/ollamaEngine.ts):
+        //  - WebGPU/WebLLM stays off by construction. The edge seed pins
         //    edge.modelOverride="hosted" so webllmEngine.probe() bails, and
-        //    no WebGPU path has been verified in ANY SWT Browser engine -
-        //    Edge WebView2 on Windows might expose it, WebKitGTK and
-        //    WKWebView do not.
-        //  - The local-HTTP backend would have to fetch the user's server
-        //    FROM THE PAGE, and this page is loaded from a file:// URL, so
-        //    that request carries an opaque Origin and is subject to CORS
-        //    at a server that was never configured to allow it. Claiming
-        //    the engine is available and then failing invisibly is worse
-        //    than not claiming it.
-        // What the user gets instead is the host-side probe (see
-        // reportLocalServer): the same /v1/models call, made from Java,
-        // where no CORS applies, reported in the label under the browser.
-        message.put("hostLocalEngine", Boolean.FALSE);
+        //    no WebGPU path has been verified in ANY SWT Browser engine.
+        //  - The local-HTTP backend fetches the server FROM THE PAGE, and this
+        //    page is a file:// document, so the request carries a "null" (or,
+        //    on WebKit, "file://") Origin and is subject to CORS.
+        // So it is TRUE only while the configured local server IS the bundled
+        // llama-server this plugin started (RuntimeWiring.hostLocalEngine).
+        // That server's CORS behaviour is known from its source: llama.cpp
+        // b11037 defaults to --cors-origins "*" with credentials on, which
+        // makes it reflect whatever Origin arrives, "null" included, and
+        // answer preflights for any header. A server the person runs
+        // themselves (Ollama rejects an unknown Origin by default) stays
+        // FALSE: claiming an engine and then failing invisibly is worse than
+        // not claiming it. For that case the host-side probe (see
+        // reportLocalServer) is the readout - /v1/models from Java, where no
+        // CORS applies.
+        // Not yet observed in a running Eclipse on any engine: see README
+        // "What is not verified".
+        String localBase = VegadutaSettings.localServerBaseUrl();
+        LocalRuntime runtime = VegadutaPlugin.localRuntime();
+        message.put("hostLocalEngine",
+                RuntimeWiring.hostLocalEngine(localBase, runtime == null ? null : runtime.status()));
+        // The page's engine reads its server address from kv, seeded when the
+        // page loads (WebviewPage.edgeSeedScript). Sending it again here lets
+        // a server started AFTER the load be used without reloading the page.
+        message.put("edgeSettings", RuntimeWiring.edgeSettings(localBase, VegadutaSettings.localServerModel()));
         // knowledge: false only when the sole credential is a vmcp_ API key,
         // whose surface has no knowledge routes (see ContextItems).
         message.put("capabilities",
-                ContextItems.hostCapabilities(tokens.isSignedIn() || tokens.apiKey() == null));
+                ContextItems.hostCapabilities(tokens.isSignedIn() || tokens.apiKey() == null,
+                        runtime != null && runtime.isSupported()));
         return message;
+    }
+
+    /**
+     * Re-sends init to a page that is already up, so it sees a changed
+     * local-server address and hostLocalEngine (protocol.ts runtime.install:
+     * "once running, re-sends init"). A page still booting gets a fresh init
+     * from its own "ready", so nothing is sent to it here.
+     */
+    private void resendInit() {
+        int generation;
+        synchronized (pendingPosts) {
+            if (!pageReady) {
+                return;
+            }
+            generation = pageGeneration;
+        }
+        submit(() -> {
+            Map<String, Object> init;
+            try {
+                init = buildInit();
+            } catch (RuntimeException e) {
+                VegadutaPlugin.logError("rebuilding the chat init message failed", e);
+                return;
+            }
+            synchronized (pendingPosts) {
+                if (generation != pageGeneration || !pageReady) {
+                    return;
+                }
+                deliver(init);
+                deliver(privacy.stateMessage());
+            }
+        });
+    }
+
+    // --- bundled runtime -----------------------------------------------------
+
+    /** runtime.query -> runtime.status. Reads marker files, so off the UI
+     * thread. */
+    private void postRuntimeStatus() {
+        submit(() -> {
+            LocalRuntime runtime = VegadutaPlugin.localRuntime();
+            post(runtime == null ? runtimeUnavailable(null) : runtime.statusMessage());
+        });
+    }
+
+    private static Map<String, Object> runtimeUnavailable(String modelId) {
+        return new RuntimeStatus(RuntimeStatus.State.ERROR, modelId, null,
+                "The on-device runtime is not available - the VegaDuta plugin is not active.", null)
+                .toMessage(RuntimeCatalog.MODELS, model -> false);
     }
 
     /**

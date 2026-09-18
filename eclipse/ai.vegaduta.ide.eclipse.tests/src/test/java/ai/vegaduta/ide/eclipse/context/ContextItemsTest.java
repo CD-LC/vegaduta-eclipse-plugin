@@ -148,9 +148,9 @@ class ContextItemsTest {
     }
 
     @Test
-    @DisplayName("init.capabilities: five context kinds, reveal + privateMode on, knowledge as told")
+    @DisplayName("init.capabilities: five context kinds, reveal + privateMode on, knowledge and localRuntime as told")
     void capabilities() {
-        Map<String, Object> caps = ContextItems.hostCapabilities(true);
+        Map<String, Object> caps = ContextItems.hostCapabilities(true, true);
         assertEquals(List.of("file", "selection", "diff", "diagnostics", "gitlog"), caps.get("context"));
         assertEquals(Boolean.TRUE, caps.get("insert"));
         assertEquals(Boolean.TRUE, caps.get("newFile"));
@@ -158,7 +158,8 @@ class ContextItemsTest {
         assertEquals(Boolean.FALSE, caps.get("commitMessage"));
         assertEquals("{\"context\":[\"file\",\"selection\",\"diff\",\"diagnostics\",\"gitlog\"],\"insert\":true,"
                 + "\"newFile\":true,\"runCode\":true,\"commitMessage\":false,\"reveal\":true,\"knowledge\":true,"
-                + "\"privateMode\":true}", Json.write(caps));
-        assertEquals(Boolean.FALSE, ContextItems.hostCapabilities(false).get("knowledge"));
+                + "\"privateMode\":true,\"localRuntime\":true}", Json.write(caps));
+        assertEquals(Boolean.FALSE, ContextItems.hostCapabilities(false, true).get("knowledge"));
+        assertEquals(Boolean.FALSE, ContextItems.hostCapabilities(true, false).get("localRuntime"));
     }
 }

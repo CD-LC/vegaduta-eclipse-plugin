@@ -9,7 +9,7 @@ in a file. You can search your team's knowledge base from the chat, let an
 answer walk you through the code it talks about, and switch on **Private
 Mode** to keep your prompts and code on your machine.
 
-Version **0.4.1** · Eclipse 2024-06 (4.32) or newer · Java 17+ ·
+Version **0.5.0** · Eclipse 2024-06 (4.32) or newer · Java 17+ ·
 Windows, Linux, macOS
 
 > **Preview.** This release is built and its core logic is covered by
@@ -28,6 +28,7 @@ Windows, Linux, macOS
 - [Commands](#commands)
 - [What gets sent, and when](#what-gets-sent-and-when)
 - [Private Mode](#private-mode)
+- [On-device model (one click)](#on-device-model-one-click)
 - [Your own local model server](#your-own-local-model-server)
 - [Settings](#settings)
 - [Troubleshooting](#troubleshooting)
@@ -223,26 +224,83 @@ Private Mode is not "offline mode": Eclipse can still talk to VegaDūta for
 sign-in and the agent list. What it guarantees is that your content stays
 put.
 
+## On-device model (one click)
+
+The plugin can download a small coding model and run it **on your
+machine**, without Ollama, LM Studio or anything else to install. Eclipse's
+built-in browser can't run models itself (it has no WebGPU), so the plugin
+runs them in a separate program instead:
+[llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server`.
+
+**To start it:** open the model panel in the chat, or go to **Window >
+Preferences > VegaDuta > Bundled on-device model**, pick a model and press
+**Download & run**.
+
+| Model | Download | Good for |
+|---|---:|---|
+| Qwen2.5 Coder 1.5B, fast (recommended) | 1.1 GB | Most laptops |
+| Qwen2.5 Coder 3B, balanced | 2.1 GB | A bit more capable, a bit slower |
+| Qwen2.5 Coder 7B, best quality | 4.7 GB | Machines with 16 GB of memory or more |
+
+What happens:
+
+1. The plugin downloads the `llama-server` program (12 to 18 MB, from the
+   official llama.cpp release **b11037**) and the model (from Hugging
+   Face). You can watch progress in the chat, in the preference page, and in
+   Eclipse's **Progress** view. **Stop** cancels a download.
+2. Both files are checked against fixed SHA-256 checksums built into the
+   plugin. A file that doesn't match is deleted and you get an error, and
+   nothing from it is ever run.
+3. The model server starts on `127.0.0.1` (your machine only) on a free
+   port. Loading the model can take up to a minute on a slow disk.
+4. Once it answers, the plugin fills its address into **Local inference
+   server** (see below) and tells the chat about it.
+
+Files go in a `.vegaduta` folder in your home folder
+(`.vegaduta/runtime/` and `.vegaduta/models/`). The JetBrains plugin uses
+the same folders, so a model you downloaded there is not downloaded again.
+To free the space, stop the model and delete that folder.
+
+The model starts again by itself the next time Eclipse starts, unless you
+pressed **Stop**. Closing the VegaDūta view does not stop it; quitting
+Eclipse does.
+
+**Private Mode** doesn't block the download: it carries none of your
+content, only the request for a public file.
+
+**What the chat can do with it.** While the bundled model runs, the chat
+offers **On-device** mode, and your messages go straight from the chat
+page to the model server on your machine. None of it goes to VegaDūta.
+This works because `llama-server` accepts requests from the chat page
+(which runs from a local file). *This has not yet been tried inside a
+running Eclipse*: see [Known limitations](#known-limitations). If
+On-device mode doesn't answer, the line under the chat still tells you
+whether the model server itself is running.
+
+Supported: Windows, macOS and Linux, on x64 or ARM64 processors. The
+builds use the processor (on Macs, also the GPU through Metal). Other
+systems don't get the button.
+
 ## Your own local model server
 
-In Eclipse 0.3.0 **the chat does not run models on your machine.** Every
-chat reply comes from your VegaDūta tenant, so you need an account or API
-key. There is no free, account-free chat mode in this version of the
-Eclipse plugin.
+If you already run an OpenAI-compatible model server yourself (for example
+[Ollama](https://ollama.com) at `http://127.0.0.1:11434`), set its address
+in **Preferences > VegaDuta > Local inference server**. The line under the
+chat then shows whether that server is reachable and whether it serves a
+model.
 
-What the plugin *does* offer: if you run an OpenAI-compatible model server
-yourself (for example [Ollama](https://ollama.com) at
-`http://127.0.0.1:11434`), set its address in **Preferences > VegaDuta >
-Local inference server**. The line under the chat then shows whether that
-server is reachable and which model it serves. Nothing is sent to it. It's a
-status check only.
+For your own server this is **a status check only**: the chat does not
+send it messages. The chat page runs inside Eclipse from a local file, and
+servers like Ollama reject requests from such a page in their default
+setup. Offering a mode that would fail without saying so is worse than not
+offering it. The bundled model above is different because the plugin knows
+that its server accepts them. In-browser GPU models (WebGPU) stay switched
+off in the IDE: none of Eclipse's three browser engines has been verified to
+run them.
 
-Why not more: the chat page runs inside Eclipse from a local file. Your
-model server would see that page's requests as coming from an unknown
-origin and, in its default setup, reject them. Offering a mode that would
-fail without saying so is worse than not offering it. In-browser GPU models
-(WebGPU) are switched off in the IDE for the same reason: none of the three
-engines above has been verified to run them.
+While the bundled model runs, this setting holds its address. When the
+bundled model stops, the plugin clears the setting again, but only if it
+still holds that address. An address you typed yourself is never removed.
 
 ## Settings
 
@@ -254,7 +312,8 @@ VegaDuta**):
 | VegaDuta tenant | Environment | *Production* (`vegaduta.ai`, default), *Staging* (`vegaduta.xyz`), or *Custom*. |
 | | Custom API base / auth base | Only for *Custom*. Your admin gives you these. They must be public addresses; `localhost` is refused. |
 | | API key (vmcp_) | Alternative to signing in. |
-| Local inference server | Base URL, Model | Your own model server, for the status check described above. Leave blank to turn it off. |
+| Bundled on-device model | Model, **Download & run**, **Stop** | The one-click model described [above](#on-device-model-one-click). The buttons act at once; they are not part of OK/Apply. |
+| Local inference server | Base URL, Model | Your own model server, for the status check described above. Leave blank to turn it off. Filled in automatically while the bundled model runs. |
 | Coding agent | Endpoint, model, max steps, provider key, auto-approve | **Not used yet.** Kept for parity with the JetBrains plugin; they change nothing in 0.3.0. |
 
 Changing a setting reloads the chat view.
@@ -309,7 +368,11 @@ Plainly stated, so you know what to expect from this preview:
   tests. It has not yet been opened in a running Eclipse on any operating
   system, and no sign-in, chat or command has been exercised end to end.
   Expect rough edges.
-- **No on-device chat** (see [above](#your-own-local-model-server)).
+- **On-device chat is untried in Eclipse.** The bundled model's download,
+  checks and server are covered by automated tests piece by piece, but no
+  model has been downloaded and chatted with inside a running Eclipse yet.
+  With your own model server (Ollama, LM Studio), the chat still doesn't
+  run on it (see [above](#your-own-local-model-server)).
 - **No inline code completions** as you type.
 - **No autonomous coding agent** (multi-step edits and commands). The
   JetBrains plugin has one; Eclipse doesn't yet.
@@ -351,6 +414,7 @@ seed into the page's kv, and "queue posts until the page says `ready`".
 | `ui.insert` | `EditorBridge.insertAtCaret` | Falls back to clipboard + status line when there's no editable text editor. |
 | `ui.newFile` | `EditorBridge.openInNewEditor` | Scratch file in `java.io.tmpdir/vegaduta/`, opened with `IDE.openEditorOnFileStore`. Stock Eclipse has no public untitled-editor API. Falls back to clipboard + status line. |
 | `ui.setCommitMessage` | `WebviewBridge` | Not advertised; if received anyway, clipboard + status line. |
+| `runtime.query` / `runtime.install` / `runtime.stop` → `runtime.status` | `WebviewBridge`, `runtime/LocalRuntime` | See [Bundled runtime](#bundled-runtime-runtime). `capabilities.localRuntime` is `true` unless the OS/arch has no pinned build. Every state change is posted as `runtime.status` (through `post()`, so it lands on the SWT UI thread in order); `runtime.query` is answered off the UI thread because it reads marker files. Not blocked by Private Mode (`PrivacyGateTest` checks it). |
 | `chat.*`, `workflow.*`, `sdlc.run`, `engine.status`, `auth.*`, `ui.copy`, `ui.openExternal`, `selection.context` | `WebviewBridge` | As in 0.1.0. |
 
 `git log` (`context/GitLog`) uses the same process rules as the diff below:
@@ -394,13 +458,57 @@ in `clients/shared/src/api/sse.ts`, and `ApiClient` feeds it whole lines:
   and `chat.js` is ~6.7 MB.
 - Webview→host is an SWT `BrowserFunction` named `__vegadutaToHost`, wrapped
   in-page by a `window.cefQuery` shim, so the shared `detectTransport()` takes
-  its existing JetBrains branch. `init.platform` is reported as `"jetbrains"`
-  because the protocol's `EnginePlatform` union has no Eclipse member and
-  extending it would fork the contract.
+  its existing JetBrains branch. `init.platform` is `"eclipse"`, a member of
+  the shared `EnginePlatform` union since 2026-09-18 (before that this host
+  reported `"jetbrains"`).
 - The page's kv is seeded with `edge.backend="ollama"` and
   `edge.modelOverride="hosted"` before the bundle runs, so the WebGPU path can
-  never half-start; `init.hostLocalEngine` is `false`. `api/LocalServerProbe`
-  does the local-server check from Java, where no CORS applies.
+  never half-start. `init.hostLocalEngine` is `true` **only** while the
+  configured local server is the bundled `llama-server` this plugin started
+  (`runtime/RuntimeWiring.hostLocalEngine`); otherwise `false`.
+  `api/LocalServerProbe` does the local-server check from Java, where no CORS
+  applies.
+
+### Bundled runtime (`runtime/`)
+
+| Class | Pure? | Does |
+|---|---|---|
+| `RuntimeCatalog` | yes | The pins: llama.cpp **b11037** CPU archives for windows/macos/linux × x64/arm64, three Qwen2.5 Coder Q4_K_M GGUFs, sizes and SHA-256s; `os.name`/`os.arch` → target; the storage layout. |
+| `RuntimeFiles` | yes | Streaming download (redirects followed, hashed while written to `<file>.part` under a file lock, progress about every 1%, size and SHA-256 checked, atomic move, `<file>.sha256-ok` marker = `"<sha> <size>"`); `verifyExisting` (a marker only counts for the pinned size, otherwise the file is re-hashed); zip extraction with a zip-slip guard; `tar -xzf` for `.tar.gz`; exec bits on unix; free loopback port. |
+| `ServerLaunch` | yes | `llama-server -m <model> --host 127.0.0.1 --port <free> -c 8192 --alias <modelId> --no-webui --no-slots`, cwd = the binary's folder, `LD_LIBRARY_PATH` on Linux; polls `/health` (then `/v1/models`) up to 180 s; kills the process tree (`ProcessHandle.descendants()`). |
+| `RuntimeStatus` | yes | `runtime.status`, field for field with `protocol.ts` `RuntimeStatus` + `RuntimeModel`. |
+| `RuntimeWiring` | yes | Writes Base URL + Model into the local-server settings once running (and remembers the URL as the bundled one); clears them on stop only if they still hold it; `hostLocalEngine`; `init.edgeSettings`. |
+| `LocalRuntime` | no | The singleton `VegadutaPlugin` creates in `start()` and shuts down in `stop()`. Every step runs in an Eclipse `Job` (one scheduling rule, so jobs never overlap); a generation counter keeps a cancelled job from overwriting newer state. |
+
+Layout, shared with the JetBrains plugin byte for byte:
+`~/.vegaduta/runtime/b11037-<os>-<arch>/` (extracted archive plus a
+`.sha256-ok` naming the archive's SHA-256; a folder that has `llama-server`
+but no marker is adopted, because the JetBrains plugin may have extracted it)
+and `~/.vegaduta/models/<gguf>` plus `<gguf>.sha256-ok`. The archive is
+downloaded next to the runtime folder, extracted into
+`b11037-<os>-<arch>.extracting/`, moved into place, then deleted.
+
+Why `hostLocalEngine` can be `true` for this server and no other: chat on a
+local model runs **in the page** (`edge/ollamaEngine.ts`,
+`chat/main.ts sendLocal`), and there is no host-side local chat path in this
+plugin (`chat.send` only ever goes to the hosted API). The page is a
+`file://` document, so its fetch carries `Origin: null` (Chromium/WebView2)
+or `file://` (WebKit). In llama.cpp b11037, `common/common.h` defaults
+`cors_origins = "*"` and `cors_credentials = true`, and
+`tools/server/server-http.cpp` answers that combination by **reflecting the
+request's `Origin`** on every response and answering `OPTIONS` preflights
+with `Allow-Headers: *`. So the page's requests pass CORS whatever Origin the
+engine sends. `--cors-origins null` would be stricter but would break on
+WebKit, which sends `file://`. Since any web page in the person's browser
+could therefore also reach the port, the server runs with `--no-webui` and
+`--no-slots` (the `/slots` endpoint is on by default and reports what each
+slot is working on). Ollama, by contrast, rejects unknown Origins by
+default, so a person's own server stays a status check.
+
+Once the server is running, the settings are written and `init` is
+re-sent (`WebviewBridge.resendInit`) with the new `hostLocalEngine` and an
+`edgeSettings` map (`edge.ollamaBaseUrl`, `edge.ollamaModel`; `""` removes a
+key), so the page picks the server up without a reload.
 
 ### Build
 
@@ -426,8 +534,8 @@ failure, not a code failure.
 
 Output: the p2 site at
 `ai.vegaduta.ide.eclipse.repository/target/repository/` plus a zip of it next
-to it. Versions: bundle `0.4.1.qualifier`, feature `0.4.1.qualifier`, poms
-`0.4.1-SNAPSHOT`; keep all three in step (bump with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=<v>-SNAPSHOT`).
+to it. Versions: bundle `0.5.0.qualifier`, feature `0.5.0.qualifier`, poms
+`0.5.0-SNAPSHOT`; keep all three in step (bump with `mvn org.eclipse.tycho:tycho-versions-plugin:set-version -DnewVersion=<v>-SNAPSHOT`).
 
 Bundle dependencies (`Require-Bundle`) are all part of the Eclipse Platform
 that every IDE package ships: `org.eclipse.ui`, `swt`, `jface`,
@@ -448,7 +556,7 @@ Don't hand-edit them. `icons/` is in `build.properties` `bin.includes`; before
 mvn -f clients/eclipse/pom.xml test
 ```
 
-**201 tests, 0 failures, 0 skipped** on the last run (JDK 17, Windows, git
+**244 tests, 0 failures, 0 skipped** on the last run (JDK 17, Windows, git
 2.x on PATH). They live in `ai.vegaduta.ide.eclipse.tests`, a plain JUnit 5 /
 surefire module: everything covered is pure Java with no SWT and no OSGi.
 
@@ -467,7 +575,12 @@ surefire module: everything covered is pure Java with no SWT and no OSGi.
 | `GitLogTest` | 11 | The exact command, separator parsing (incl. a record cut by the capture cap), rendering, per-body cap, commit-boundary truncation that never exceeds the limit, failure wording, and **real git**: 3 commits newest first with bodies and no author, and a no-commits repo |
 | `RevealPathsTest` | 6 | `..` refused in every form, absolute/drive/UNC/URI/stream/NUL refused, absolute paths contained segment-wise (`app` does not contain `app-secrets`, `app/../x` normalized before the check), line mapping and clamping |
 | `KnowledgeTest` | 7 | `SearchResultResponse` → `KnowledgeHit` (explicit nulls, `chunkIndex` dropped, unusable entries skipped), request body, `topK` clamp, UUID filtering, query trimming, reasons, `knowledge.result` shape |
-| `PrivacyGateTest` | 7 | Exactly the four hosted types blocked, every local type allowed, per-type replies carrying none of the user's content, persistence only on change, `privacy.state`, the view's wording |
+| `PrivacyGateTest` | 7 | Exactly the four hosted types blocked, every local type (incl. `runtime.*`) allowed, per-type replies carrying none of the user's content, persistence only on change, `privacy.state`, the view's wording |
+| `RuntimeCatalogTest` | 6 | `os.name`/`os.arch` → target for all six builds, unsupported platforms (FreeBSD, 32-bit, ppc64le, null), the exact asset/URL/size/SHA per platform, the model list and recommended pick, well-formed unique pins, the shared storage layout |
+| `RuntimeFilesTest` | 17 | SHA-256 test vector, markers (a size change or another pin invalidates one), downloads against an in-process HTTP server (redirect, ~1% progress, verify, atomic move, checksum mismatch, oversize body, cancel, HTTP 404; every failure leaves no file or `.part`), zip extraction and binary discovery, **zip-slip** refusal, the exec-bit rule, free port, wording, output tail |
+| `RuntimeStatusTest` | 5 | `runtime.status` shape and key order, `RuntimeModel` fields, omitted optionals, `baseUrl` only while running, progress clamped, state wire names |
+| `RuntimeWiringTest` | 6 | Settings written when running, cleared on stop only while they still hold the bundled URL, `hostLocalEngine` only for the running bundled server, `edgeSettings` |
+| `ServerLaunchTest` | 2 | The exact `llama-server` command line; `LD_LIBRARY_PATH` on Linux only |
 | `LanguageIdsExtensionTest` | 11 | languageId → scratch-file extension, fallback to `txt`, round-trip with `forFileName` |
 
 The real-git tests are skipped, not failed, on a machine without git.
@@ -501,3 +614,14 @@ The real-git tests are skipped, not failed, on a machine without git.
   category.
 - `localStorage` on a `file://` origin, and the Java editor's
   `#CompilationUnitEditorContext` menu id, are both unobserved.
+- **The bundled runtime is compiled and its pure halves are tested, but it
+  has never run.** No real archive or model has been downloaded by this code
+  (tests use a few hundred KB from an in-process server), no `llama-server`
+  has been extracted or started by it on any OS, and the `tar` path, exec bits
+  and `LD_LIBRARY_PATH` are untested on macOS/Linux. `LocalRuntime` (Jobs,
+  cancellation, auto-start, process-tree kill on bundle stop), the preference
+  page group, `resendInit`, and the page's handling of `runtime.status` and a
+  re-sent `init` are unexercised. The CORS claim for On-device chat rests on
+  reading llama.cpp b11037's source, not on a request from a real SWT page;
+  Chromium's Local Network Access checks and WebKit's `file://` behaviour
+  could still get in the way.

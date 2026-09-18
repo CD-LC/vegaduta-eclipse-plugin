@@ -42,7 +42,12 @@ class PrivacyGateTest {
             "{\"type\":\"ui.reveal\",\"path\":\"a/b.java\",\"startLine\":1,\"endLine\":2}",
             "{\"type\":\"ui.openExternal\",\"url\":\"https://vegaduta.ai\"}",
             "{\"type\":\"engine.status\",\"status\":{}}",
-            "{\"type\":\"privacy.mode\",\"private\":false}");
+            "{\"type\":\"privacy.mode\",\"private\":false}",
+            // The bundled runtime: a model download carries none of the
+            // person's content, so Private Mode must not block it.
+            "{\"type\":\"runtime.query\"}",
+            "{\"type\":\"runtime.install\",\"modelId\":\"qwen2.5-coder-1.5b\"}",
+            "{\"type\":\"runtime.stop\"}");
 
     @Test
     @DisplayName("off: nothing is blocked")

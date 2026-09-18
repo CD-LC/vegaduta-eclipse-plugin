@@ -27,21 +27,45 @@ public class VegadutaPlugin extends AbstractUIPlugin {
 
     private static volatile VegadutaPlugin plugin;
 
+    /** The bundled on-device model runtime (runtime/LocalRuntime). Created
+     * with the bundle, shut down with it - which ends llama-server and its
+     * children, so no model server outlives Eclipse. */
+    private volatile ai.vegaduta.ide.eclipse.runtime.LocalRuntime localRuntime;
+
     @Override
     public void start(BundleContext context) throws Exception {
         super.start(context);
         plugin = this;
         chooseWindowsBrowserEngine();
+        localRuntime = new ai.vegaduta.ide.eclipse.runtime.LocalRuntime();
+        // Background Job only: reconciles settings and, if the person's model
+        // is installed and they did not stop it, starts it.
+        localRuntime.startUp();
     }
 
     @Override
     public void stop(BundleContext context) throws Exception {
+        ai.vegaduta.ide.eclipse.runtime.LocalRuntime runtime = localRuntime;
+        localRuntime = null;
+        if (runtime != null) {
+            try {
+                runtime.shutdown();
+            } catch (RuntimeException e) {
+                logWarning("stopping the on-device model server failed", e);
+            }
+        }
         plugin = null;
         super.stop(context);
     }
 
     public static VegadutaPlugin getDefault() {
         return plugin;
+    }
+
+    /** The bundled runtime, or null when the bundle is not active. */
+    public static ai.vegaduta.ide.eclipse.runtime.LocalRuntime localRuntime() {
+        VegadutaPlugin current = plugin;
+        return current == null ? null : current.localRuntime;
     }
 
     /**

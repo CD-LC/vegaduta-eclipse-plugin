@@ -55,8 +55,12 @@ public final class ContextItems {
      *    host answers "signed-out".
      *  - privateMode: this host blocks its own hosted paths while Private
      *    Mode is on (WebviewBridge, PrivacyGate).
+     *  - localRuntime: runtime.query / runtime.install / runtime.stop are
+     *    serviced by the bundled llama-server runtime (runtime/LocalRuntime).
+     *    False only on an OS/arch with no pinned build, where offering a
+     *    download that can only fail would be a lie.
      */
-    public static Map<String, Object> hostCapabilities(boolean knowledge) {
+    public static Map<String, Object> hostCapabilities(boolean knowledge, boolean localRuntime) {
         Map<String, Object> capabilities = Json.object();
         capabilities.put("context", new ArrayList<>(SUPPORTED_KINDS));
         capabilities.put("insert", Boolean.TRUE);
@@ -66,6 +70,7 @@ public final class ContextItems {
         capabilities.put("reveal", Boolean.TRUE);
         capabilities.put("knowledge", knowledge);
         capabilities.put("privateMode", Boolean.TRUE);
+        capabilities.put("localRuntime", localRuntime);
         return capabilities;
     }
 
