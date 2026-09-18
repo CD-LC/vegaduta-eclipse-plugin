@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>ai.vegaduta</groupId>
+    <artifactId>ai.vegaduta.ide.eclipse.parent</artifactId>
+    <version>0.4.1-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>ai.vegaduta.ide.eclipse</artifactId>
+  <packaging>eclipse-plugin</packaging>
+  <name>VegaDuta for Eclipse</name>
+
+  <build>
+    <plugins>
+      <!-- The chat webview is built by clients/shared ("npm run
+           build:webview" writes ../../shared/dist/webview) and copied into
+           the bundle before packaging - the same arrangement as the JetBrains
+           plugin's copyWebview Gradle task.
+
+           Tolerant when the bundle has not been built: a missing source
+           directory makes this a no-op (the resources plugin skips a
+           non-existent <directory>), and at runtime the view shows an
+           explicit "bundle missing - run npm run build:webview" message
+           instead of a blank browser. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-webview</id>
+            <phase>process-resources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.basedir}/webview</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../../shared/dist/webview</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

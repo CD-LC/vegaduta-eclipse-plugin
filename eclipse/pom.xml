@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tycho reactor for the VegaDuta Eclipse IDE plugin.
+
+  Modules, in build order:
+    ai.vegaduta.ide.eclipse             the OSGi bundle (eclipse-plugin)
+    ai.vegaduta.ide.eclipse.tests       plain JUnit 5 tests for the pure logic
+    ai.vegaduta.ide.eclipse.feature     the installable feature
+    ai.vegaduta.ide.eclipse.repository  the p2 update site
+
+  The tests module is deliberately a PLAIN jar module, not an
+  eclipse-test-plugin: everything it covers (SSE framing, JSON, environment
+  URL resolution, device-flow token handling) is pure Java with no SWT and no
+  OSGi, so running it under surefire keeps the feedback loop honest and fast
+  and keeps it runnable even when no OSGi test harness can be provisioned.
+  Anything that genuinely needs a workbench is NOT covered by tests here and
+  is called out as untested in README.md - see "What is not verified".
+
+  Toolchain: Maven on JDK 17 (Eclipse 2024-06 / 4.32 targets JavaSE-17, and
+  Tycho 4.0.x is the last line that runs on 17; Tycho 5.x needs JDK 21).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>ai.vegaduta</groupId>
+  <artifactId>ai.vegaduta.ide.eclipse.parent</artifactId>
+  <version>0.4.1-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>VegaDuta Eclipse Plugin (parent)</name>
+
+  <properties>
+    <tycho.version>4.0.13</tycho.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <junit.jupiter.version>5.11.3</junit.jupiter.version>
+    <surefire.version>3.2.5</surefire.version>
+  </properties>
+
+  <modules>
+    <module>ai.vegaduta.ide.eclipse</module>
+    <module>ai.vegaduta.ide.eclipse.tests</module>
+    <module>ai.vegaduta.ide.eclipse.feature</module>
+    <module>ai.vegaduta.ide.eclipse.repository</module>
+  </modules>
+
+  <repositories>
+    <!-- Target platform. 2024-06 (4.32) is the floor the README states; a
+         newer simultaneous release works too - change the URL, nothing else.
+         If this host cannot reach download.eclipse.org the whole build fails
+         at dependency resolution; that is a network failure, not a code
+         failure, and README.md says how to tell the two apart. -->
+    <repository>
+      <id>eclipse-2024-06</id>
+      <layout>p2</layout>
+      <url>https://download.eclipse.org/releases/2024-06</url>
+    </repository>
+  </repositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-maven-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <extensions>true</extensions>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>target-platform-configuration</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <executionEnvironment>JavaSE-17</executionEnvironment>
+          <pomDependencies>consider</pomDependencies>
+          <environments>
+            <environment>
+              <os>win32</os><ws>win32</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>linux</os><ws>gtk</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>macosx</os><ws>cocoa</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>macosx</os><ws>cocoa</ws><arch>aarch64</arch>
+            </environment>
+          </environments>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

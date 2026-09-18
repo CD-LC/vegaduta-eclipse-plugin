@@ -1,0 +1,10 @@
+# Tycho / Maven build output.
+target/
+
+# The chat webview bundle copied in from clients/shared/dist/webview at build
+# time (see ai.vegaduta.ide.eclipse/pom.xml). Build output, never source.
+# The directory itself, and its README.txt, ARE tracked - build.properties
+# lists webview/ in bin.includes and Tycho fails if that matches no files.
+ai.vegaduta.ide.eclipse/webview/index.html
+ai.vegaduta.ide.eclipse/webview/chat.js
+ai.vegaduta.ide.eclipse/webview/chat.css

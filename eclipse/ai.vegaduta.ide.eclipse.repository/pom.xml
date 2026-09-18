@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>ai.vegaduta</groupId>
+    <artifactId>ai.vegaduta.ide.eclipse.parent</artifactId>
+    <version>0.4.1-SNAPSHOT</version>
+  </parent>
+  <artifactId>ai.vegaduta.ide.eclipse.repository</artifactId>
+  <packaging>eclipse-repository</packaging>
+  <name>VegaDuta for Eclipse (p2 update site)</name>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-p2-repository-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <!-- Self-contained enough to install from a local directory, but
+               NOT a mirror of the whole platform: the feature's <requires>
+               are satisfied by the Eclipse the user already runs. -->
+          <includeAllDependencies>false</includeAllDependencies>
+          <compress>false</compress>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <!-- Release signing, opt-in: mvn clean verify -Psign
+       Signs every p2 artifact with PGP (Tycho's sign-p2-artifacts) so Eclipse
+       can show WHO published it and detect tampering, instead of treating the
+       content as unsigned. The key never lives in the repo: point the build at
+       an exported secret-key file and its id through the environment.
+         VEGADUTA_PGP_KEYID               the signing key id / fingerprint
+         VEGADUTA_PGP_SECRET_KEYS_FILE    path to the exported (armored) secret key
+       Publish the public key (keys.openpgp.org) and its fingerprint on
+       vegaduta.ai so users can check it in Eclipse's trust dialog. -->
+  <profiles>
+    <profile>
+      <id>sign</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.eclipse.tycho</groupId>
+            <artifactId>tycho-gpg-plugin</artifactId>
+            <version>${tycho.version}</version>
+            <executions>
+              <execution>
+                <id>pgp-sign-p2-artifacts</id>
+                <goals>
+                  <goal>sign-p2-artifacts</goal>
+                </goals>
+                <configuration>
+                  <signer>bc</signer>
+                  <keyname>${env.VEGADUTA_PGP_KEYID}</keyname>
+                  <secretKeys>${env.VEGADUTA_PGP_SECRET_KEYS_FILE}</secretKeys>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

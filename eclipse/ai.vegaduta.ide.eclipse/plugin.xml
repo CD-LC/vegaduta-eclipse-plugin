@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+
+   <extension point="org.eclipse.ui.views">
+      <category
+            id="ai.vegaduta.ide.eclipse.category"
+            name="VegaDuta"/>
+      <view
+            id="ai.vegaduta.ide.eclipse.view"
+            name="VegaDuta"
+            category="ai.vegaduta.ide.eclipse.category"
+            class="ai.vegaduta.ide.eclipse.ui.VegadutaView"
+            icon="icons/vegaduta16.png"
+            restorable="true"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.preferencePages">
+      <page
+            id="ai.vegaduta.ide.eclipse.preferences"
+            name="VegaDuta"
+            class="ai.vegaduta.ide.eclipse.settings.VegadutaPreferencePage"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.commands">
+      <category
+            id="ai.vegaduta.ide.eclipse.commands"
+            name="VegaDuta"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.signIn"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Sign In to VegaDuta"
+            description="Sign in with the OAuth device flow"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.explain"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Explain Selection"
+            description="Stage the selected code in the VegaDuta chat composer with an explain instruction"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.fix"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Fix Selection"
+            description="Stage the selected code in the VegaDuta chat composer with a fix instruction"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.refactor"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Refactor Selection"
+            description="Stage the selected code in the VegaDuta chat composer with a refactor instruction"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.tests"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Write Tests for Selection"
+            description="Stage a write-tests prompt in the VegaDuta chat with the selection attached"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.docs"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Add Docs to Selection"
+            description="Stage an add-documentation prompt in the VegaDuta chat with the selection attached"/>
+      <command
+            id="ai.vegaduta.ide.eclipse.command.review"
+            categoryId="ai.vegaduta.ide.eclipse.commands"
+            name="Review My Changes"
+            description="Stage a code-review prompt in the VegaDuta chat with the uncommitted git diff attached"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.handlers">
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.signIn"
+            class="ai.vegaduta.ide.eclipse.actions.SignInHandler"/>
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.explain"
+            class="ai.vegaduta.ide.eclipse.actions.SelectionToChatHandler$Explain">
+         <enabledWhen>
+            <reference definitionId="ai.vegaduta.ide.eclipse.hasTextSelection"/>
+         </enabledWhen>
+      </handler>
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.fix"
+            class="ai.vegaduta.ide.eclipse.actions.SelectionToChatHandler$Fix">
+         <enabledWhen>
+            <reference definitionId="ai.vegaduta.ide.eclipse.hasTextSelection"/>
+         </enabledWhen>
+      </handler>
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.refactor"
+            class="ai.vegaduta.ide.eclipse.actions.SelectionToChatHandler$Refactor">
+         <enabledWhen>
+            <reference definitionId="ai.vegaduta.ide.eclipse.hasTextSelection"/>
+         </enabledWhen>
+      </handler>
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.tests"
+            class="ai.vegaduta.ide.eclipse.actions.PrefillHandler$WriteTests">
+         <enabledWhen>
+            <reference definitionId="ai.vegaduta.ide.eclipse.hasTextSelection"/>
+         </enabledWhen>
+      </handler>
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.docs"
+            class="ai.vegaduta.ide.eclipse.actions.PrefillHandler$AddDocs">
+         <enabledWhen>
+            <reference definitionId="ai.vegaduta.ide.eclipse.hasTextSelection"/>
+         </enabledWhen>
+      </handler>
+      <!-- Always enabled: with no editor open the diff falls back to the one
+           git repository the open projects share, and the chat says why when
+           there is none. -->
+      <handler
+            commandId="ai.vegaduta.ide.eclipse.command.review"
+            class="ai.vegaduta.ide.eclipse.actions.PrefillHandler$ReviewChanges"/>
+   </extension>
+
+   <!-- "there is a non-empty text selection". The handlers also re-check at
+        execute() time, because a key binding can fire an enabled-but-stale
+        handler. -->
+   <extension point="org.eclipse.core.expressions.definitions">
+      <definition id="ai.vegaduta.ide.eclipse.hasTextSelection">
+         <with variable="selection">
+            <and>
+               <instanceof value="org.eclipse.jface.text.ITextSelection"/>
+               <test property="ai.vegaduta.ide.eclipse.selectionNotEmpty"/>
+            </and>
+         </with>
+      </definition>
+   </extension>
+
+   <extension point="org.eclipse.core.expressions.propertyTesters">
+      <propertyTester
+            id="ai.vegaduta.ide.eclipse.selectionTester"
+            type="org.eclipse.jface.text.ITextSelection"
+            namespace="ai.vegaduta.ide.eclipse"
+            properties="selectionNotEmpty"
+            class="ai.vegaduta.ide.eclipse.actions.TextSelectionTester"/>
+   </extension>
+
+   <extension point="org.eclipse.ui.menus">
+      <!-- Editor right-click. -->
+      <menuContribution locationURI="popup:#TextEditorContext?after=additions">
+         <menu id="ai.vegaduta.ide.eclipse.editorMenu" label="VegaDuta">
+            <command commandId="ai.vegaduta.ide.eclipse.command.explain" label="Explain Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.fix" label="Fix Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.refactor" label="Refactor Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.tests" label="Write Tests for Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.docs" label="Add Docs to Selection"/>
+            <separator name="vegaduta.changes" visible="true"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.review" label="Review My Changes"/>
+         </menu>
+      </menuContribution>
+      <!-- The Java editor has its own context menu id, so the contribution has
+           to be repeated for it; #TextEditorContext does not reach it. -->
+      <menuContribution locationURI="popup:#CompilationUnitEditorContext?after=additions">
+         <menu id="ai.vegaduta.ide.eclipse.javaEditorMenu" label="VegaDuta">
+            <command commandId="ai.vegaduta.ide.eclipse.command.explain" label="Explain Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.fix" label="Fix Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.refactor" label="Refactor Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.tests" label="Write Tests for Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.docs" label="Add Docs to Selection"/>
+            <separator name="vegaduta.changes" visible="true"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.review" label="Review My Changes"/>
+         </menu>
+      </menuContribution>
+      <!-- Window menu: open the chat, sign in, and every editor action. -->
+      <menuContribution locationURI="menu:window?after=additions">
+         <menu id="ai.vegaduta.ide.eclipse.windowMenu" label="VegaDuta">
+            <command commandId="org.eclipse.ui.views.showView" label="Open VegaDuta Chat">
+               <parameter name="org.eclipse.ui.views.showView.viewId" value="ai.vegaduta.ide.eclipse.view"/>
+            </command>
+            <command commandId="ai.vegaduta.ide.eclipse.command.signIn" label="Sign In..."/>
+            <separator name="vegaduta.selection" visible="true"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.explain" label="Explain Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.fix" label="Fix Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.refactor" label="Refactor Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.tests" label="Write Tests for Selection"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.docs" label="Add Docs to Selection"/>
+            <separator name="vegaduta.changes" visible="true"/>
+            <command commandId="ai.vegaduta.ide.eclipse.command.review" label="Review My Changes"/>
+         </menu>
+      </menuContribution>
+   </extension>
+
+</plugin>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <feature id="ai.vegaduta.ide.eclipse.feature">
+      <category name="ai.vegaduta"/>
+   </feature>
+   <category-def name="ai.vegaduta" label="VegaDūta">
+      <description>
+         VegaDūta agent chat, workflow runs and editor actions for Eclipse.
+      </description>
+   </category-def>
+</site>
