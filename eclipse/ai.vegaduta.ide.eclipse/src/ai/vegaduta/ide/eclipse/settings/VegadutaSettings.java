@@ -19,6 +19,10 @@ public final class VegadutaSettings {
     public static final String P_ENVIRONMENT = "environment";
     public static final String P_CUSTOM_API_BASE = "customApiBase";
     public static final String P_CUSTOM_AUTH_BASE = "customAuthBase";
+    /** The "local" environment's own bases (a VegaDuta install on this
+     * machine). Blank = the compose defaults in Environments. */
+    public static final String P_LOCAL_API_BASE = "localApiBase";
+    public static final String P_LOCAL_AUTH_BASE = "localAuthBase";
     public static final String P_LOCAL_SERVER_BASE_URL = "localServerBaseUrl";
     public static final String P_LOCAL_SERVER_MODEL = "localServerModel";
     public static final String P_AGENT_BASE_URL = "agentBaseUrl";
@@ -61,12 +65,49 @@ public final class VegadutaSettings {
         return get(P_ENVIRONMENT, Environments.ENV_PRODUCTION);
     }
 
+    /** Stores the environment choice (the chat view's Connect button picks
+     * "local" this way) and flushes, so a restart lands on what was chosen. */
+    public static void setEnvironment(String environment) {
+        IEclipsePreferences node = node();
+        node.put(P_ENVIRONMENT, environment);
+        flush(node, "the environment");
+    }
+
+    /** Stores the "local" environment's bases (null = back to the compose
+     * defaults) and flushes. Written by the Connect flow with whatever the
+     * probe actually found. */
+    public static void setLocalBases(String apiBase, String authBase) {
+        IEclipsePreferences node = node();
+        if (apiBase == null || apiBase.isBlank()) {
+            node.remove(P_LOCAL_API_BASE);
+        } else {
+            node.put(P_LOCAL_API_BASE, apiBase.trim());
+        }
+        if (authBase == null || authBase.isBlank()) {
+            node.remove(P_LOCAL_AUTH_BASE);
+        } else {
+            node.put(P_LOCAL_AUTH_BASE, authBase.trim());
+        }
+        flush(node, "the local server address");
+    }
+
     public static String apiBase() {
-        return Environments.apiBase(environment(), get(P_CUSTOM_API_BASE, ""));
+        return Environments.apiBase(environment(), get(P_CUSTOM_API_BASE, ""), get(P_LOCAL_API_BASE, ""));
     }
 
     public static String authBase() {
-        return Environments.authBase(environment(), get(P_CUSTOM_AUTH_BASE, ""));
+        return Environments.authBase(environment(), get(P_CUSTOM_AUTH_BASE, ""), get(P_LOCAL_AUTH_BASE, ""));
+    }
+
+    /** The local install's api base, resolved (compose default when unset) -
+     * the address the chat view's init probe asks about. */
+    public static String localApiBase() {
+        return Environments.apiBase(Environments.ENV_LOCAL, "", get(P_LOCAL_API_BASE, ""));
+    }
+
+    /** Its Keycloak, resolved the same way. */
+    public static String localAuthBase() {
+        return Environments.authBase(Environments.ENV_LOCAL, "", get(P_LOCAL_AUTH_BASE, ""));
     }
 
     /**

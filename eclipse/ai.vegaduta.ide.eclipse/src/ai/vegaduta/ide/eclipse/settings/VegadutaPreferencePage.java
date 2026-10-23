@@ -43,17 +43,21 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
 
     /** Combo order; index maps to these ids. */
     private static final String[] ENV_IDS = {
-        Environments.ENV_PRODUCTION, Environments.ENV_STAGING, Environments.ENV_CUSTOM
+        Environments.ENV_PRODUCTION, Environments.ENV_STAGING, Environments.ENV_CUSTOM,
+        Environments.ENV_LOCAL
     };
     private static final String[] ENV_LABELS = {
         "Production (api.vegaduta.ai)",
         "Staging (api.vegaduta.xyz)",
-        "Custom (self-hosted)"
+        "Custom (self-hosted)",
+        "Local - this machine (an install you run)"
     };
 
     private Combo environment;
     private Text customApiBase;
     private Text customAuthBase;
+    private Text localApiBase;
+    private Text localAuthBase;
     private Text apiKey;
     private Text localServerBaseUrl;
     private Text localServerModel;
@@ -116,6 +120,18 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
         customAuthBase.setMessage("https://auth.example.com");
         customAuthBase.setLayoutData(fill());
         customAuthBase.addListener(SWT.Modify, e -> validate());
+
+        new Label(group, SWT.NONE).setText("Local API base:");
+        localApiBase = new Text(group, SWT.BORDER);
+        localApiBase.setMessage(Environments.LOCAL_API);
+        localApiBase.setLayoutData(fill());
+        localApiBase.addListener(SWT.Modify, e -> validate());
+
+        new Label(group, SWT.NONE).setText("Local auth base:");
+        localAuthBase = new Text(group, SWT.BORDER);
+        localAuthBase.setMessage(Environments.LOCAL_AUTH);
+        localAuthBase.setLayoutData(fill());
+        localAuthBase.addListener(SWT.Modify, e -> validate());
 
         new Label(group, SWT.NONE).setText("API key (vmcp_):");
         apiKey = new Text(group, SWT.BORDER | SWT.PASSWORD);
@@ -328,6 +344,8 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
         IEclipsePreferences node = VegadutaSettings.node();
         customApiBase.setText(node.get(VegadutaSettings.P_CUSTOM_API_BASE, ""));
         customAuthBase.setText(node.get(VegadutaSettings.P_CUSTOM_AUTH_BASE, ""));
+        localApiBase.setText(node.get(VegadutaSettings.P_LOCAL_API_BASE, ""));
+        localAuthBase.setText(node.get(VegadutaSettings.P_LOCAL_AUTH_BASE, ""));
         localServerBaseUrl.setText(node.get(VegadutaSettings.P_LOCAL_SERVER_BASE_URL, ""));
         localServerModel.setText(node.get(VegadutaSettings.P_LOCAL_SERVER_MODEL, ""));
         agentBaseUrl.setText(node.get(VegadutaSettings.P_AGENT_BASE_URL, ""));
@@ -359,6 +377,8 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
         node.put(VegadutaSettings.P_ENVIRONMENT, ENV_IDS[Math.max(0, environment.getSelectionIndex())]);
         node.put(VegadutaSettings.P_CUSTOM_API_BASE, customApiBase.getText().trim());
         node.put(VegadutaSettings.P_CUSTOM_AUTH_BASE, customAuthBase.getText().trim());
+        node.put(VegadutaSettings.P_LOCAL_API_BASE, localApiBase.getText().trim());
+        node.put(VegadutaSettings.P_LOCAL_AUTH_BASE, localAuthBase.getText().trim());
         node.put(VegadutaSettings.P_LOCAL_SERVER_BASE_URL, localServerBaseUrl.getText().trim());
         node.put(VegadutaSettings.P_LOCAL_SERVER_MODEL, localServerModel.getText().trim());
         node.put(VegadutaSettings.P_AGENT_BASE_URL, agentBaseUrl.getText().trim());
@@ -395,6 +415,8 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
         environment.select(0);
         customApiBase.setText("");
         customAuthBase.setText("");
+        localApiBase.setText("");
+        localAuthBase.setText("");
         localServerBaseUrl.setText("");
         localServerModel.setText("");
         agentBaseUrl.setText("");
@@ -410,15 +432,21 @@ public class VegadutaPreferencePage extends PreferencePage implements IWorkbench
     // --- validation ----------------------------------------------------------
 
     private void updateCustomEnabled() {
-        boolean custom = Environments.ENV_CUSTOM.equals(ENV_IDS[Math.max(0, environment.getSelectionIndex())]);
+        String selected = ENV_IDS[Math.max(0, environment.getSelectionIndex())];
+        boolean custom = Environments.ENV_CUSTOM.equals(selected);
         customApiBase.setEnabled(custom);
         customAuthBase.setEnabled(custom);
+        boolean local = Environments.ENV_LOCAL.equals(selected);
+        localApiBase.setEnabled(local);
+        localAuthBase.setEnabled(local);
     }
 
     /**
      * RULE 0, enforced where the user can see it: a platform API base or token
-     * issuer may never be a loopback address. The local inference server, on
-     * purpose, is NOT checked - that one IS the user's own machine.
+     * issuer entered under "custom" may never be a loopback address. The
+     * "local" environment is the deliberate exception (the user's own install,
+     * opted into) and the local inference server is not a platform URL at
+     * all - neither is checked here.
      */
     private boolean validate() {
         setErrorMessage(null);

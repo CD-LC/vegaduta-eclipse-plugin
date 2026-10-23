@@ -106,7 +106,10 @@ replies arrive all at once instead of word by word.
 
 **Which server?** By default the plugin connects to **production,
 `vegaduta.ai`**. Your admin may ask you to choose *staging* or a *custom*
-address in the preferences instead.
+address in the preferences instead. If you run a VegaDūta install on your own
+machine (compose lite or a dev build), the chat view's banner offers a
+**Connect** button when it finds it - one click switches the environment to
+*Local* and signs in there.
 
 ## Using the chat
 
@@ -309,8 +312,9 @@ VegaDuta**):
 
 | Section | Setting | What it's for |
 |---|---|---|
-| VegaDuta tenant | Environment | *Production* (`vegaduta.ai`, default), *Staging* (`vegaduta.xyz`), or *Custom*. |
+| VegaDuta tenant | Environment | *Production* (`vegaduta.ai`, default), *Staging* (`vegaduta.xyz`), *Custom*, or *Local* (a VegaDūta install running on this machine). |
 | | Custom API base / auth base | Only for *Custom*. Your admin gives you these. They must be public addresses; `localhost` is refused. |
+| | Local API base / auth base | Only for *Local*. Blank means the compose defaults `127.0.0.1:8080` / `127.0.0.1:8180` - the one pair of loopback addresses this plugin may hold, because they name your own install. |
 | | API key (vmcp_) | Alternative to signing in. |
 | Bundled on-device model | Model, **Download & run**, **Stop** | The one-click model described [above](#on-device-model-one-click). The buttons act at once; they are not part of OK/Apply. |
 | Local inference server | Base URL, Model | Your own model server, for the status check described above. Leave blank to turn it off. Filled in automatically while the bundled model runs. |
@@ -565,7 +569,7 @@ surefire module: everything covered is pure Java with no SWT and no OSGi.
 | `SseEventReaderTest` | 15 | The framing rules above, ported from `clients/shared/test/sse.test.ts` |
 | `ApiClientStreamTest` | 11 | Byte decoding across reads, unterminated final event, typed IO failure, `dev/v1` path swap |
 | `ModelsTest` | 37 | Wire decoding, terminal run states, sandbox-language and file-extension maps, local-server probe wording |
-| `EnvironmentsTest` | 21 | RULE 0: `.ai` = production, `.xyz` = staging, loopback refused for platform bases |
+| `EnvironmentsTest` | 24 | RULE 0: `.ai` = production, `.xyz` = staging, loopback refused for `custom` bases, allowed only for the explicit `local` environment |
 | `DeviceFlowTest` | 16 | Device-authorization parsing, poll classification, token parsing, expiry margin |
 | `JsonTest` | 11 | The hand-rolled JSON layer, including `<script>`-embedding escapes |
 | `WebviewPageTest` | 11 | Page assembly, edge seed, delivery-call encoding |

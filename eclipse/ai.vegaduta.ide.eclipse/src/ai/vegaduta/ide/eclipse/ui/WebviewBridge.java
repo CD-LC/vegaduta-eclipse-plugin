@@ -31,6 +31,7 @@ package ai.vegaduta.ide.eclipse.ui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+import org.eclipse.jface.window.Window;
 import org.eclipse.swt.browser.Browser;
 import org.eclipse.swt.browser.BrowserFunction;
 import org.eclipse.swt.widgets.Display;
@@ -46,6 +48,7 @@ import ai.vegaduta.ide.eclipse.VegadutaPlugin;
 import ai.vegaduta.ide.eclipse.api.ApiClient;
 import ai.vegaduta.ide.eclipse.api.ApiException;
 import ai.vegaduta.ide.eclipse.api.Knowledge;
+import ai.vegaduta.ide.eclipse.api.LocalPlatform;
 import ai.vegaduta.ide.eclipse.api.LocalServerProbe;
 import ai.vegaduta.ide.eclipse.api.Models;
 import ai.vegaduta.ide.eclipse.auth.DeviceFlowLogin;
@@ -60,6 +63,7 @@ import ai.vegaduta.ide.eclipse.runtime.LocalRuntime;
 import ai.vegaduta.ide.eclipse.runtime.RuntimeCatalog;
 import ai.vegaduta.ide.eclipse.runtime.RuntimeStatus;
 import ai.vegaduta.ide.eclipse.runtime.RuntimeWiring;
+import ai.vegaduta.ide.eclipse.settings.Environments;
 import ai.vegaduta.ide.eclipse.settings.VegadutaSettings;
 
 public final class WebviewBridge {
@@ -287,6 +291,7 @@ public final class WebviewBridge {
                 // listener, which the view turns into auth.changed.
             });
             case "auth.signOut" -> TokenStore.get().signOut(); // listener posts auth.changed
+            case "auth.connectLocal" -> connectLocal();
             case "chat.send" -> handleChatSend(message);
             case "chat.abort" -> {
                 AtomicBoolean flag = activeChats.get(Json.str(message, "reqId"));
@@ -432,6 +437,27 @@ public final class WebviewBridge {
         message.put("auth", authJson());
         message.put("agents", lists.agentMaps());
         message.put("workflows", lists.workflowMaps());
+        // A VegaDuta install answering on this machine (compose lite or a
+        // dev build) earns the banner's "Connect" button. Probed host-side:
+        // loopback refuses fast when nothing runs, and asking from Java has
+        // no CORS question at all. Null result = the field is simply absent.
+        LocalPlatform.Info local = LocalPlatform.probe(
+                VegadutaSettings.localApiBase(), VegadutaSettings.localAuthBase());
+        if (local != null) {
+            Map<String, Object> localServer = Json.object();
+            localServer.put("apiBase", local.apiBase());
+            // Null authBase = the install's Keycloak did not answer. Json's
+            // writer drops null values, so an absent key is the null - and
+            // connectLocal() re-probes anyway, so the page only needs to
+            // know the server exists to offer its Connect button.
+            if (local.authBase() != null) {
+                localServer.put("authBase", local.authBase());
+            }
+            if (local.authMode() != null) {
+                localServer.put("authMode", local.authMode().name().toLowerCase(Locale.ROOT));
+            }
+            message.put("localServer", localServer);
+        }
         // hostLocalEngine turns on the page's engine host, which in this host
         // can only ever mean its LOCAL-HTTP backend (edge/ollamaEngine.ts):
         //  - WebGPU/WebLLM stays off by construction. The edge seed pins
@@ -499,6 +525,81 @@ public final class WebviewBridge {
                 deliver(privacy.stateMessage());
             }
         });
+    }
+
+    /**
+     * auth.connectLocal: the view's Connect button - point the environment at
+     * the VegaDuta install this machine is running and sign in there. The
+     * probe re-runs because init's result can be minutes old; a server that
+     * went away since gets a plain answer. A Keycloak that did not answer
+     * means the device flow cannot start, so the API-key path is pointed out
+     * instead - same rule as the shared probe's contract.
+     */
+    private void connectLocal() {
+        submit(() -> {
+            LocalPlatform.Info found = LocalPlatform.probe(
+                    VegadutaSettings.localApiBase(), VegadutaSettings.localAuthBase());
+            if (found == null) {
+                report("Nothing answered at " + VegadutaSettings.localApiBase()
+                        + " - the local server may have stopped.");
+                return;
+            }
+            VegadutaSettings.setLocalBases(found.apiBase(), found.authBase());
+            VegadutaSettings.setEnvironment(Environments.ENV_LOCAL);
+            // Re-send init so the page's apiBase and localServer follow the
+            // switch; a successful sign-in then posts auth.changed as usual.
+            resendInit();
+            if (found.authMode() == LocalPlatform.AuthMode.LOCAL) {
+                connectLocalAccount(found.apiBase());
+                return;
+            }
+            if (found.authMode() == null) {
+                report("VegaDuta found on this machine, but no sign-in answered -"
+                        + " its Keycloak may still be booting. Paste a vmcp_ API key in"
+                        + " Window > Preferences > VegaDuta instead.");
+                return;
+            }
+            DeviceFlowLogin.signIn(reason -> {
+                if (reason != null) {
+                    report("Sign-in failed: " + reason);
+                }
+            });
+        });
+    }
+
+    /** Personal-install sign-in: identifier + password on the UI thread, the
+     * login POST back on the pooled thread this runs on. */
+    private void connectLocalAccount(String apiBase) {
+        String[] credentials = promptLocalLogin(apiBase);
+        if (credentials == null) {
+            return;
+        }
+        LocalPlatform.AuthResult result = LocalPlatform.login(apiBase, credentials[0], credentials[1]);
+        if (result instanceof LocalPlatform.AuthResult.Ok ok) {
+            TokenStore.get().storeLocalSession(ok.session(), apiBase);
+            resendInit();
+            if (ok.session().passwordChangeRequired()) {
+                report("Signed in - note: this account still uses its setup password;"
+                        + " change it in the console's settings.");
+            }
+            return;
+        }
+        report("Sign-in failed: " + ((LocalPlatform.AuthResult.Failed) result).message());
+    }
+
+    /** Asks for the local account's email + password on the UI thread.
+     * Returns {identifier, password} or null when cancelled. */
+    private String[] promptLocalLogin(String apiBase) {
+        if (display == null || display.isDisposed()) {
+            return null;
+        }
+        final LocalLoginDialog dialog = new LocalLoginDialog(display.getActiveShell(), apiBase);
+        final int[] code = new int[1];
+        display.syncExec(() -> code[0] = dialog.open());
+        if (code[0] != Window.OK || dialog.identifier() == null) {
+            return null;
+        }
+        return new String[] { dialog.identifier(), dialog.password() };
     }
 
     // --- bundled runtime -----------------------------------------------------

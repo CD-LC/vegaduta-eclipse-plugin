@@ -56,6 +56,32 @@ class EnvironmentsTest {
         assertEquals("https://auth.vegaduta.xyz", Environments.authBase("custom", null));
     }
 
+    @Test
+    @DisplayName("local resolves to the compose defaults - the one loopback pair that is allowed")
+    void local() {
+        // The "local" environment is the explicit opt-in to a VegaDuta install
+        // on the user's own machine; RULE 0 refuses loopback for "custom",
+        // not for this deliberate, user-selected environment.
+        assertEquals("http://127.0.0.1:8080", Environments.apiBase("local", "", ""));
+        assertEquals("http://127.0.0.1:8180", Environments.authBase("local", "", ""));
+    }
+
+    @Test
+    @DisplayName("local honours a typed base verbatim, trailing slashes removed")
+    void localTypedBases() {
+        assertEquals("http://127.0.0.1:18080",
+                Environments.apiBase("local", "", " http://127.0.0.1:18080/ "));
+        assertEquals("http://127.0.0.1:18180",
+                Environments.authBase("local", "", "http://127.0.0.1:18180//"));
+    }
+
+    @Test
+    @DisplayName("local never shadows staging/production for an unknown or cloud environment")
+    void localDoesNotLeak() {
+        assertEquals("https://api.vegaduta.xyz", Environments.apiBase("banana", "", "http://127.0.0.1:1"));
+        assertEquals("https://api.vegaduta.ai", Environments.apiBase("production", "", "http://127.0.0.1:1"));
+    }
+
     @ParameterizedTest
     @DisplayName("RULE 0: a loopback custom base is refused for the API and the token issuer")
     @ValueSource(strings = {

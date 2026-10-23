@@ -26,6 +26,7 @@ import org.eclipse.equinox.security.storage.SecurePreferencesFactory;
 import org.eclipse.equinox.security.storage.StorageException;
 
 import ai.vegaduta.ide.eclipse.VegadutaPlugin;
+import ai.vegaduta.ide.eclipse.api.LocalPlatform;
 import ai.vegaduta.ide.eclipse.api.Models;
 import ai.vegaduta.ide.eclipse.json.Json;
 import ai.vegaduta.ide.eclipse.settings.Environments;
@@ -36,6 +37,11 @@ public final class TokenStore {
     /** The ISecurePreferences node everything below lives under. */
     private static final String SECURE_NODE = "ai.vegaduta.ide.eclipse";
     private static final String KEY_REFRESH_TOKEN = "refresh-token";
+    /** Set only when the stored refresh token is a personal install's
+     * /api/auth/local session: its value is the install's apiBase, which is
+     * also where refresh posts. Absent = the token is a Keycloak refresh
+     * token. */
+    private static final String KEY_LOCAL_SESSION_BASE = "local-session-base";
     private static final String KEY_API_KEY = "api-key";
 
     /** The coding agent's BYOK key for a third-party OpenAI-compatible
@@ -137,6 +143,22 @@ public final class TokenStore {
         if (refresh == null) {
             return null;
         }
+        String localBase = localSessionBase();
+        if (localBase != null) {
+            // A personal install's session: refresh on core, not a Keycloak.
+            LocalPlatform.AuthResult result = LocalPlatform.refresh(localBase, refresh);
+            if (result instanceof LocalPlatform.AuthResult.Ok ok) {
+                return storeLocalSession(ok.session(), localBase);
+            }
+            LocalPlatform.AuthResult.Failed failed = (LocalPlatform.AuthResult.Failed) result;
+            // An answered refusal = the session is gone; unreachable (null
+            // status) = transient, keep the refresh token.
+            if (failed.status() != null) {
+                signOut();
+            }
+            VegadutaPlugin.logInfo("local session refresh rejected: " + failed.message());
+            return null;
+        }
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "refresh_token");
         form.put("client_id", Models.IDE_CLIENT_ID);
@@ -191,10 +213,31 @@ public final class TokenStore {
         if (tokens.refreshToken() != null) {
             writeSecret(KEY_REFRESH_TOKEN, tokens.refreshToken());
         }
+        // A Keycloak response replaces any local-accounts session marker, so
+        // refresh goes back to the token endpoint, not the local install.
+        writeSecret(KEY_LOCAL_SESSION_BASE, null);
         if (!wasSignedIn) {
             fireAuthChanged();
         }
         return tokens.accessToken();
+    }
+
+    /** Stores a personal install's /api/auth/local session (its camelCase
+     * fields, not a Keycloak response's snake_case). Marks the refresh token
+     * as local so refreshBlocking() posts to core, not a token endpoint. */
+    public String storeLocalSession(LocalPlatform.Session session, String apiBase) {
+        boolean wasSignedIn = isSignedIn();
+        accessToken = session.accessToken();
+        expiresAtMs = System.currentTimeMillis() + Math.max(0, session.expiresIn() - 30) * 1000;
+        username = session.username();
+        if (session.refreshToken() != null) {
+            writeSecret(KEY_REFRESH_TOKEN, session.refreshToken());
+        }
+        writeSecret(KEY_LOCAL_SESSION_BASE, apiBase);
+        if (!wasSignedIn) {
+            fireAuthChanged();
+        }
+        return session.accessToken();
     }
 
     public void signOut() {
@@ -203,6 +246,7 @@ public final class TokenStore {
         expiresAtMs = 0;
         username = null;
         writeSecret(KEY_REFRESH_TOKEN, null);
+        writeSecret(KEY_LOCAL_SESSION_BASE, null);
         if (wasSignedIn) {
             fireAuthChanged();
         }
@@ -236,6 +280,10 @@ public final class TokenStore {
 
     private String refreshToken() {
         return readSecret(KEY_REFRESH_TOKEN);
+    }
+
+    private String localSessionBase() {
+        return readSecret(KEY_LOCAL_SESSION_BASE);
     }
 
     private static ISecurePreferences secureNode() {
